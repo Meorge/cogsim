@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-
+from random import sample
 
 class BaseUser(ABC):
     """
@@ -11,14 +11,7 @@ class BaseUser(ABC):
     def __init__(self):
         self.current_band = None
 
-    def leave_band(self):
-        """
-        Make this user leave the band it is occupying. Equivalent to setting `current_band_id` to `None`.
-        Provided to increase readability.
-        """
-        self.current_band = None
-
-    def switch_to_band(self, band_id: int):
+    def switch_to_band(self, band_id: int | None):
         """
         Switch this user to a given band. Equivalent to setting `current_band_id` to `band_id`.
         Provided to increase readability.
@@ -32,6 +25,14 @@ class BaseUser(ABC):
         Evaluate the user's current situation, and move into or out of bands.
         :param current_band_contents: The other users in the band that this user is currently in. If this user
         is not currently in a band, the list will be `None`.
+        """
+        pass
+
+    @abstractmethod
+    def calculate_step_metrics(self, current_step: int):
+        """
+        Evaluate the user's current situation after the latest step, and calculate any desired metrics.
+        NOTE: Do not switch bands within this method.
         """
         pass
 
@@ -51,6 +52,11 @@ class Simulator:
             num_bands = 10
         self.num_bands = num_bands
 
+        self.reset()
+
+    def reset(self):
+        self.current_step = 0
+
     def step(self):
         """
         Perform a single synchronous step in the simulation. Each user will have an opportunity to
@@ -62,6 +68,10 @@ class Simulator:
         # Find the users in each band and run their logic
         for user in self.users:
             user.make_decision(None if user.current_band is None else band_snapshot[user.current_band])
+
+        # Once all users are done making decisions, calculate step metrics
+        for user in self.users:
+            user.calculate_step_metrics(self.current_step)
 
     def band_contents(self) -> list[list[BaseUser]]:
         """
