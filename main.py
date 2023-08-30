@@ -1,19 +1,42 @@
-# This is a sample Python script.
-
-# Press ⌃F5 to execute it or replace it with your code.
-# Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
-
 from cogsim import BaseUser, Simulator
 from random import randint
-
 
 CONGESTION_LIMIT = 3
 NUM_BANDS = 10
 NUM_USERS = 30
-TOTAL_STEPS = 1000
+TOTAL_STEPS = 100000
+
+
+def primary_user_in_band(current_band_contents: list['BaseUser']):
+    return any([isinstance(user, PrimaryUser) for user in current_band_contents])
+
+
+class PrimaryUser(BaseUser):
+    def __init__(self, licensed_band: int = 0):
+        super().__init__()
+        self.licensed_band = licensed_band
+        self.time_left_transmitting = 0
+        self.time_left_waiting = 0
+
+    def make_decision(self, current_band_contents: list['BaseUser'] | None):
+        if self.current_band is not None:
+            self.time_left_transmitting -= 1
+            if self.time_left_transmitting <= 0:
+                self.current_band = None
+                self.time_left_waiting = randint(10, 15)
+        else:
+            self.time_left_waiting -= 1
+            if self.time_left_waiting <= 0:
+                self.current_band = self.licensed_band
+                self.time_left_transmitting = randint(5, 10)
+
+    def calculate_step_metrics(self, current_step: int):
+        pass
+
 
 class User(BaseUser):
     time_spent_transmitting = 0
+
     def __init__(self):
         super().__init__()
         self.time_spent_transmitting = 0
@@ -21,10 +44,12 @@ class User(BaseUser):
     def make_decision(self, current_band_contents: list['BaseUser'] | None):
         # Currently in a band, so decide whether to stay here or leave
         if self.current_band is not None:
-            number_of_users_in_band = len(current_band_contents)
-            if number_of_users_in_band > CONGESTION_LIMIT:
-                # If we've gotten here, then the congestion limit for this band
-                # has been exceeded and we need to pull out
+            # Switch to another band if there are too many users
+            if len(current_band_contents) > CONGESTION_LIMIT:
+                self.switch_to_band(None)
+
+            # Switch to another band if the primary user is in this band
+            if primary_user_in_band(current_band_contents):
                 self.switch_to_band(None)
 
         # Not currently in a band, so choose a band to join
@@ -36,9 +61,13 @@ class User(BaseUser):
         if self.current_band is not None:
             self.time_spent_transmitting += 1
 
+# TODO: Utility function
+# We often look at convergence time after primary user disruption
+
 
 def main():
     user_list = [User() for _ in range(NUM_USERS)]
+    user_list.append(PrimaryUser())
     sim = Simulator(num_bands=NUM_BANDS, users=user_list)
 
     for _ in range(TOTAL_STEPS):
@@ -46,9 +75,9 @@ def main():
 
     # Done with simulation, let's see how often each node got to transmit
     for i, node in enumerate(user_list):
-        print(f"{i}: {node.time_spent_transmitting * 100.0 / TOTAL_STEPS:.2f}%")
+        if isinstance(node, User):
+            print(f"{i}: {node.time_spent_transmitting * 100.0 / TOTAL_STEPS:.2f}%")
 
 
 if __name__ == '__main__':
     main()
-
