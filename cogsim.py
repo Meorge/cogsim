@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from random import sample
 
+
 class BaseUser(ABC):
     """
     The abstract base class for a simulated user in a cognitive radio simulation.
@@ -28,7 +29,6 @@ class BaseUser(ABC):
         """
         pass
 
-    @abstractmethod
     def calculate_step_metrics(self, current_step: int):
         """
         Evaluate the user's current situation after the latest step, and calculate any desired metrics.
