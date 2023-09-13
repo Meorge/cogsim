@@ -162,6 +162,24 @@ class CSSUser(User):
         # TODO: Use received values to decide whether or not the primary user is present, and make switch based on that
         #  Do the iterative summation algorithm from the ReDiSen paper.
 
+        for user in current_band_contents:
+            average = 0.0
+            for user_2 in current_band_contents:
+                if isinstance(user_2, CSSUser):
+                    average += user_2.sense_pu_value(...)
+
+            average /= len(current_band_contents)
+
+            difference = np.abs(user.sense_pu_value(...) - average)
+
+            summation = 0.0
+            for user_2 in current_band_contents:
+                if isinstance(user_2, CSSUser):
+                    summation += np.abs(user_2.sense_pu_value(...) - average)
+
+            reputation = (2 - len(current_band_contents) * difference / summation) if summation != 0 else 1.0
+
+
 class MaliciousCSSUser(CSSUser):
     def sense_pu_value(self, current_band_contents: list['BaseUser']) -> float:
         return NOISE_FLOOR if len(primary_users_in_band(current_band_contents)) > 0 else PU_TRANSMIT_POWER
