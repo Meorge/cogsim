@@ -8,6 +8,9 @@ NUM_BANDS = 10
 NUM_USERS = 30
 TOTAL_STEPS = 100000
 
+# Represented as lambda (λ) in paper. No units.
+DISCOUNT_FACTOR: float = 0.995
+
 # What honest nodes should report when they do not detect the PU,
 # or what malicious nodes should report when they do detect the PU.
 # Units of dB m.
@@ -32,8 +35,14 @@ NORMAL_RNG_SIGMA: float = 3.0
 # but a value of 1.0 makes the results line up with the ReDiSen paper the most.
 PATH_LOSS_EXPONENT: float = 1.0
 
+# Height and width of the area in which SUs may be placed.
+# Units of m.
+SU_AREA_WIDTH: float = 1000.0
+SU_AREA_HEIGHT: float = 1000.0
+
 
 def primary_users_in_band(current_band_contents: list['BaseUser']) -> list['PrimaryUser']:
+    if current_band_contents is None: return []
     return [u for u in current_band_contents if isinstance(u, PrimaryUser)]
 
 
@@ -41,9 +50,20 @@ def distance_between_users(a: 'User', b: 'User') -> float:
     return np.sqrt(np.power(a.x - b.x, 2) + np.power(a.y - b.y, 2))
 
 
-class PrimaryUser(BaseUser):
-    def __init__(self, licensed_band: int = 0):
+class User(BaseUser):
+    x: float = 0.0
+    y: float = 0.0
+    transmit_power: float = 4.0  # measured in watts
+
+    def __init__(self, x: float, y: float):
         super().__init__()
+        self.x = x
+        self.y = y
+
+
+class PrimaryUser(User):
+    def __init__(self, x: float, y: float, licensed_band: int = 0):
+        super().__init__(x, y)
         self.licensed_band = licensed_band
         self.time_left_transmitting = 0
         self.time_left_waiting = 0
@@ -64,19 +84,13 @@ class PrimaryUser(BaseUser):
         pass
 
 
-class User(BaseUser):
-    x: float = 0.0
-    y: float = 0.0
-    transmit_power: float = 4.0  # measured in watts
-
-
 class SimpleUser(BaseUser):
     time_spent_transmitting: int = 0
     transmit_power: float = 4.0  # measured in watts
     current_band_contents: list['BaseUser']
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, x: float, y: float):
+        super().__init__(x, y)
         self.time_spent_transmitting = 0
         self.current_band_contents = []
 
@@ -105,7 +119,7 @@ class SimpleUser(BaseUser):
         channel_bandwidth = 20.0  # B, measured in MHz (should this be changed to Hz??)
         channel_gain = 10.0  # G_s
         channel_gain_between_me_and_other_su = 5.0  # G_si
-        additive_white_gaussian_noise = 0.05 # W, measured in watts
+        additive_white_gaussian_noise = 0.05  # W, measured in watts
 
         # Calculate summation at bottom
         denominator = 0.0
@@ -129,8 +143,8 @@ class CSSUser(User):
     """
     other_user_votes: dict['CSSUser', float]
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, x: float, y: float):
+        super().__init__(x, y)
         self.other_user_votes = {}
 
     def receive_primary_user_presence_vote(self, source_user: 'CSSUser', pu_value: float):
@@ -147,37 +161,50 @@ class CSSUser(User):
             pu = primary_users[0]  # For now, we'll just use the first primary user found
             distance = distance_between_users(self, pu)
             power_loss = np.random.default_rng().normal(0.0, NORMAL_RNG_SIGMA)
-            return pu.transmit_power - 10 * PATH_LOSS_EXPONENT * np.log10(distance) - power_loss - MULTI_PATH_FADING_EFFECT
+            return pu.transmit_power - 10 * PATH_LOSS_EXPONENT * np.log10(
+                distance) - power_loss - MULTI_PATH_FADING_EFFECT
         else:
             return NOISE_FLOOR
 
     def make_decision(self, current_band_contents: list['BaseUser'] | None):
         # Sense the primary user's presence or absence. Malicious nodes will use a subclass of this user, with
         #  this method overridden to provide faulty results.
+        if current_band_contents is None:
+            # TODO: logic when not currently in a band
+            return
+
         sensed_pu_value = self.sense_pu_value(current_band_contents)
         for user in current_band_contents:
             if isinstance(user, CSSUser) and user != self:
                 user.receive_primary_user_presence_vote(self, sensed_pu_value)
 
-        # TODO: Use received values to decide whether or not the primary user is present, and make switch based on that
-        #  Do the iterative summation algorithm from the ReDiSen paper.
+        # Calculate average measured value from neighbors
+        avg_neighbors = np.sum([self.other_user_votes[u] for u in current_band_contents]) / len(current_band_contents)
 
-        for user in current_band_contents:
-            average = 0.0
-            for user_2 in current_band_contents:
-                if isinstance(user_2, CSSUser):
-                    average += user_2.sense_pu_value(...)
+        # Compute denominator summation (same for all reputation calculation for all users)
+        denominator_summation = np.sum(
+            [np.abs(self.other_user_votes[u] - avg_neighbors) for u in current_band_contents])
+        if denominator_summation == 0.0:
+            denominator_summation = 1.0
 
-            average /= len(current_band_contents)
+        # Calculate reputation for each user
+        reputations = {}
+        for other_user in current_band_contents:
+            if other_user not in self.other_user_votes:
+                continue
+            numerator = len(current_band_contents) * np.abs(self.other_user_votes[other_user] - avg_neighbors)
+            reputations[other_user] = 2 - numerator / denominator_summation
 
-            difference = np.abs(user.sense_pu_value(...) - average)
-
+        # Start with our current value, then modify it over update sessions to reflect the contributions from neighbors
+        for i in range(150):
             summation = 0.0
-            for user_2 in current_band_contents:
-                if isinstance(user_2, CSSUser):
-                    summation += np.abs(user_2.sense_pu_value(...) - average)
+            for other_user in current_band_contents:
+                summation += (1 - DISCOUNT_FACTOR) * reputations[other_user] * (
+                            self.other_user_votes[other_user] - sensed_pu_value)
+            sensed_pu_value += summation
 
-            reputation = (2 - len(current_band_contents) * difference / summation) if summation != 0 else 1.0
+        # Now we have a reputation-based sense value.
+        # We should use this value to decide what to do (remain in a channel or leave)
 
 
 class MaliciousCSSUser(CSSUser):
@@ -186,8 +213,12 @@ class MaliciousCSSUser(CSSUser):
 
 
 def main():
-    user_list = [User() for _ in range(NUM_USERS)]
-    user_list.append(PrimaryUser())
+    user_list = [CSSUser(x=np.random.default_rng().uniform(high=SU_AREA_WIDTH),
+                         y=np.random.default_rng().uniform(high=SU_AREA_HEIGHT)) for _ in range(NUM_USERS)]
+    user_list.append(MaliciousCSSUser(x=np.random.default_rng().uniform(high=SU_AREA_WIDTH),
+                                      y=np.random.default_rng().uniform(high=SU_AREA_HEIGHT)))
+    user_list.append(PrimaryUser(x=np.random.default_rng().uniform(high=SU_AREA_WIDTH),
+                                 y=np.random.default_rng().uniform(high=SU_AREA_HEIGHT)))
     sim = Simulator(num_bands=NUM_BANDS, users=user_list)
 
     for _ in range(TOTAL_STEPS):
