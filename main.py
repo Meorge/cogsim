@@ -3,10 +3,15 @@ from random import randint
 from math import log
 import numpy as np
 
+# TODO: Set number of bands to 1, maybe number of users to 10 for now.
+#  For initial tests, we should have the PU just either transmit or not transmit the whole time.
+#  Once that's working and we can get data out of it, we can try having it switch between transmitting and not,
+#  and see how quickly the SUs can detect it.
+
 CONGESTION_LIMIT = 3
 NUM_BANDS = 10
 NUM_USERS = 30
-TOTAL_STEPS = 100000
+TOTAL_STEPS = 100
 
 # Represented as lambda (λ) in paper. No units.
 DISCOUNT_FACTOR: float = 0.995
@@ -142,10 +147,14 @@ class CSSUser(User):
     a primary user in their current band, and send the result to their neighbors (i.e., other users in their band).
     """
     other_user_votes: dict['CSSUser', float]
+    sensed_pu_history: list[float]
+    last_sensed_pu_value: float
 
     def __init__(self, x: float, y: float):
         super().__init__(x, y)
         self.other_user_votes = {}
+        self.sensed_pu_history = []
+        self.last_sensed_pu_value = 0.0
 
     def receive_primary_user_presence_vote(self, source_user: 'CSSUser', pu_value: float):
         self.other_user_votes[source_user] = pu_value
@@ -167,10 +176,16 @@ class CSSUser(User):
             return NOISE_FLOOR
 
     def make_decision(self, current_band_contents: list['BaseUser'] | None):
-        # Sense the primary user's presence or absence. Malicious nodes will use a subclass of this user, with
-        #  this method overridden to provide faulty results.
+        """
+        Sense the primary user's presence or absence. Malicious nodes will override this method to provide faulty
+        results.
+        :param current_band_contents:
+        :return:
+        """
+
+        # If the user is not currently transmitting in a band, then they should choose a band to transmit in
         if current_band_contents is None:
-            # TODO: logic when not currently in a band
+            self.switch_to_band(randint(0, NUM_BANDS - 1))
             return
 
         sensed_pu_value = self.sense_pu_value(current_band_contents)
@@ -179,33 +194,52 @@ class CSSUser(User):
                 user.receive_primary_user_presence_vote(self, sensed_pu_value)
 
         # Calculate average measured value from neighbors
-        avg_neighbors = np.sum([self.other_user_votes[u] for u in current_band_contents]) / len(current_band_contents)
+        neighbors_with_submitted_values = [u for u in current_band_contents if u in self.other_user_votes]
 
-        # Compute denominator summation (same for all reputation calculation for all users)
-        denominator_summation = np.sum(
-            [np.abs(self.other_user_votes[u] - avg_neighbors) for u in current_band_contents])
-        if denominator_summation == 0.0:
-            denominator_summation = 1.0
+        # Only attempt ReDiSen algorithm if we have neighbor data to use
+        if len(neighbors_with_submitted_values) != 0:
+            avg_neighbors = np.sum([self.other_user_votes[u] for u in neighbors_with_submitted_values]) / len(neighbors_with_submitted_values)
 
-        # Calculate reputation for each user
-        reputations = {}
-        for other_user in current_band_contents:
-            if other_user not in self.other_user_votes:
-                continue
-            numerator = len(current_band_contents) * np.abs(self.other_user_votes[other_user] - avg_neighbors)
-            reputations[other_user] = 2 - numerator / denominator_summation
+            # Compute denominator summation (same for all reputation calculation for all users)
+            denominator_summation = np.sum(
+                [np.abs(self.other_user_votes[u] - avg_neighbors) for u in neighbors_with_submitted_values])
+            if denominator_summation == 0.0:
+                denominator_summation = 1.0
 
-        # Start with our current value, then modify it over update sessions to reflect the contributions from neighbors
-        for i in range(150):
-            summation = 0.0
-            for other_user in current_band_contents:
-                summation += (1 - DISCOUNT_FACTOR) * reputations[other_user] * (
-                            self.other_user_votes[other_user] - sensed_pu_value)
-            sensed_pu_value += summation
+            # Calculate reputation for each user
+            reputations = {}
+            for other_user in neighbors_with_submitted_values:
+                if other_user not in self.other_user_votes:
+                    continue
+                numerator = len(neighbors_with_submitted_values) * np.abs(self.other_user_votes[other_user] - avg_neighbors)
+                reputations[other_user] = 2 - numerator / denominator_summation
+
+            # Start with our current value, then modify it over update sessions to reflect the contributions from neighbors
+            for i in range(150):
+                summation = 0.0
+                for other_user in neighbors_with_submitted_values:
+                    summation += (1 - DISCOUNT_FACTOR) * reputations[other_user] * (
+                                self.other_user_votes[other_user] - sensed_pu_value)
+                sensed_pu_value += summation
+
+        self.last_sensed_pu_value = sensed_pu_value
 
         # Now we have a reputation-based sense value.
-        # We should use this value to decide what to do (remain in a channel or leave)
+        # If the value is positive, then we assume the PU is present, and vacate the band.
+        # Otherwise, we assume the PU is absent, and thus that we can remain here without disrupting PU service.
+        pu_is_present = sensed_pu_value >= 0.0
+        if pu_is_present:
+            self.switch_to_band(None)
+        else:
+            pass
 
+    def calulcate_step_metrics(self, current_step: int):
+        """
+        Return the calculated PU presence value
+        :param current_step:
+        :return:
+        """
+        self.sensed_pu_history.append(self.last_sensed_pu_value)
 
 class MaliciousCSSUser(CSSUser):
     def sense_pu_value(self, current_band_contents: list['BaseUser']) -> float:
@@ -221,13 +255,14 @@ def main():
                                  y=np.random.default_rng().uniform(high=SU_AREA_HEIGHT)))
     sim = Simulator(num_bands=NUM_BANDS, users=user_list)
 
-    for _ in range(TOTAL_STEPS):
+    for step in range(TOTAL_STEPS):
+        print(f"Step {step}")
         sim.step()
 
     # Done with simulation, let's see how often each node got to transmit
-    for i, node in enumerate(user_list):
-        if isinstance(node, User):
-            print(f"{i}: {node.time_spent_transmitting * 100.0 / TOTAL_STEPS:.2f}%")
+    for i, user in enumerate(user_list):
+        if isinstance(user, CSSUser) and not isinstance(user, MaliciousCSSUser):
+            ...  # TODO: get some stats!
 
 
 if __name__ == '__main__':
