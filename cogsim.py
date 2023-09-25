@@ -7,6 +7,7 @@ class BaseUser(ABC):
     The abstract base class for a simulated user in a cognitive radio simulation.
     Create a concrete subclass of this type and reimplement `make_decision_when_idle()` and `make_decision_when_in_band
     """
+
     current_band: int | None
 
     def __init__(self):
@@ -20,12 +21,16 @@ class BaseUser(ABC):
         """
         self.current_band = band_id
 
-    @abstractmethod
-    def make_decision(self, current_band_contents: list['BaseUser'] | None):
+    def step(
+        self, current_band_contents: list["BaseUser"] | None, pass_index: int
+    ):
         """
         Evaluate the user's current situation, and move into or out of bands.
         :param current_band_contents: The other users in the band that this user is currently in. If this user
         is not currently in a band, the list will be `None`.
+        :param pass_index: The index of the current pass for this step. All users will run their step function
+        with a given pass index; after that, they will all run again with the next pass index, or stop if the
+        total number of passes in the Simulator has been fulfilled.
         """
         pass
 
@@ -38,7 +43,12 @@ class BaseUser(ABC):
 
 
 class Simulator:
-    def __init__(self, num_bands: int | None = None, users: list[BaseUser] | None = None):
+    def __init__(
+        self,
+        num_bands: int | None = None,
+        users: list[BaseUser] | None = None,
+        passes: int | None = None,
+    ):
         """
         Initialize a simulator with a given number of bands and users.
         :param num_bands: The number of bands available to the users. Defaults to 10.
@@ -51,6 +61,10 @@ class Simulator:
         if num_bands is None:
             num_bands = 10
         self.num_bands = num_bands
+
+        if passes is None:
+            passes = 1
+        self.passes = passes
 
         self.reset()
 
@@ -66,8 +80,14 @@ class Simulator:
         band_snapshot = self.band_contents()
 
         # Find the users in each band and run their logic
-        for user in self.users:
-            user.make_decision(None if user.current_band is None else band_snapshot[user.current_band])
+        for pass_index in range(self.passes):
+            for user in self.users:
+                user.step(
+                    None
+                    if user.current_band is None
+                    else band_snapshot[user.current_band],
+                    pass_index=pass_index,
+                )
 
         # Once all users are done making decisions, calculate step metrics
         for user in self.users:

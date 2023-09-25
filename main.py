@@ -73,7 +73,7 @@ class PrimaryUser(User):
         self.time_left_transmitting = 0
         self.time_left_waiting = 0
 
-    def make_decision(self, current_band_contents: list['BaseUser'] | None):
+    def step(self, current_band_contents: list['BaseUser'] | None, pass_index: int):
         if self.current_band is not None:
             self.time_left_transmitting -= 1
             if self.time_left_transmitting <= 0:
@@ -99,7 +99,7 @@ class SimpleUser(BaseUser):
         self.time_spent_transmitting = 0
         self.current_band_contents = []
 
-    def make_decision(self, current_band_contents: list['BaseUser'] | None):
+    def step(self, current_band_contents: list['BaseUser'] | None, pass_index: int):
         self.current_band_contents = current_band_contents
         # Currently in a band, so decide whether to stay here or leave
         if self.current_band is not None:
@@ -175,7 +175,7 @@ class CSSUser(User):
         else:
             return NOISE_FLOOR
 
-    def make_decision(self, current_band_contents: list['BaseUser'] | None):
+    def step(self, current_band_contents: list['BaseUser'] | None, pass_index: int):
         """
         Sense the primary user's presence or absence. Malicious nodes will override this method to provide faulty
         results.
@@ -253,10 +253,9 @@ def main():
                                       y=np.random.default_rng().uniform(high=SU_AREA_HEIGHT)))
     user_list.append(PrimaryUser(x=np.random.default_rng().uniform(high=SU_AREA_WIDTH),
                                  y=np.random.default_rng().uniform(high=SU_AREA_HEIGHT)))
-    sim = Simulator(num_bands=NUM_BANDS, users=user_list)
+    sim = Simulator(num_bands=NUM_BANDS, users=user_list, passes=2)
 
     for step in range(TOTAL_STEPS):
-        print(f"Step {step}")
         sim.step()
 
     # Done with simulation, let's see how often each node got to transmit
