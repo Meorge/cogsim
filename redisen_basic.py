@@ -3,6 +3,10 @@ An implementation of basic ReDiSen using the cogsim library.
 """
 from cogsim import BaseUser, Simulator
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from matplotlib.legend_handler import HandlerTuple
 
 CONGESTION_LIMIT = 3
 NUM_BANDS = 10
@@ -197,7 +201,7 @@ class MaliciousSecondaryUser(BasicReDiSenSecondaryUser):
         else:
             super().sense_pu_value(current_band_contents)
 
-PU_TRANSMIT = True
+PU_TRANSMIT = False
 USE_REDISEN = True
 
 def main():
@@ -229,6 +233,31 @@ def main():
 
     for _ in range(1):
         sim.step()
+
+    fig: Figure
+    ax: Axes
+    fig, ax = plt.subplots(figsize=(4, 3), dpi=300, constrained_layout=True)
+
+    tuples = []
+    labels = []
+    for i, user in enumerate(user_list):
+        lines = []
+        if isinstance(user, SecondaryUser) and not isinstance(user, MaliciousSecondaryUser):
+            hist = user.sensed_pu_history
+            line, = ax.plot(hist, color="red", linestyle="solid", linewidth=0.5)
+            lines.append(line)
+
+        tuples.append(tuple(lines))
+        labels.append("yoohoo")
+
+    ax.set_xbound(0, 150)
+    ax.set_title(f"Sensed PU value with ReDiSen when PU is {'not' if not PU_TRANSMIT else ''} transmitting", wrap=True)
+    ax.set_xlabel("Value Update Rounds")
+    ax.set_ylabel("Updated Value")
+
+    # ax.legend(tuples, labels, handler_map={tuple: HandlerTuple(ndivide=None)})
+    fig.show()
+    plt.savefig(f"redisen_pu_{'transmit' if PU_TRANSMIT else 'no_transmit'}.png")
 
     # Now that we're done, let's check where the benign nodes ended
     if PU_TRANSMIT:
