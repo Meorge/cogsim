@@ -49,11 +49,6 @@ def primary_users_in_band(
         return []
     return [u for u in current_band_contents if isinstance(u, PrimaryUser)]
 
-
-def distance_between_users(a: "User2D", b: "User2D") -> float:
-    return np.sqrt(np.power(a.x - b.x, 2) + np.power(a.y - b.y, 2))
-
-
 def calculate_reputations(
     neighbor_values: dict["User2D", float]
 ) -> dict["User2D", float]:
@@ -84,6 +79,9 @@ class User2D(BaseUser):
         self.x = x
         self.y = y
 
+    def distance_to(self, other_user: 'User2D'):
+        return np.sqrt(np.power(self.x - other_user.x, 2) + np.power(self.y - other_user.y, 2))
+
 
 class PrimaryUser(User2D):
     def __init__(self, x: float, y: float, transmit: bool):
@@ -93,7 +91,6 @@ class PrimaryUser(User2D):
             self.switch_to_band(0)
         else:
             self.switch_to_band(None)
-
 
 class SecondaryUser(User2D):
     """
@@ -124,7 +121,7 @@ class SecondaryUser(User2D):
             pu = primary_users[
                 0
             ]  # For now, we'll just use the first primary user found
-            distance = distance_between_users(self, pu)
+            distance = self.distance_to(pu)
             power_loss = np.random.default_rng().normal(0.0, NORMAL_RNG_SIGMA)
             return (
                 pu.transmit_power
@@ -135,6 +132,8 @@ class SecondaryUser(User2D):
         else:
             return NOISE_FLOOR
 
+
+class BasicReDiSenSecondaryUser(SecondaryUser):
     def step(self, current_band_contents: list[BaseUser] | None, pass_index: int):
         if pass_index == 0:
             self.measure_and_send_to_neighbors(current_band_contents)
@@ -144,9 +143,9 @@ class SecondaryUser(User2D):
     def measure_and_send_to_neighbors(self, band: list[BaseUser] | None):
         sensed_pu_value = self.sense_pu_value(band)
         for user in band:
-            if isinstance(user, SecondaryUser):
+            if isinstance(user, BasicReDiSenSecondaryUser):
                 user.receive_primary_user_readings(self, sensed_pu_value)
-
+                
     def evaluate_neighbors(self):
         reputations = calculate_reputations(self.other_user_votes) if USE_REDISEN else {u: 1.0 for u in self.other_user_votes.keys()}
 
@@ -168,21 +167,35 @@ class SecondaryUser(User2D):
         # Once we get here, we have the ReDiSen estimate of the PU's energy.
         # Then we can choose what to do about it (such as leaving the band).
 
-    def receive_primary_user_readings(self, source: "SecondaryUser", value: float):
+    def receive_primary_user_readings(self, source: "BasicReDiSenSecondaryUser", value: float):
         self.other_user_votes[source] = value
 
+class MaliciousSecondaryUser(BasicReDiSenSecondaryUser):
+    def __init__(self, x: float, y: float, attack_likelihood: float = 1.0):
+        super().__init__(x, y)
+        self.attack_likelihood = attack_likelihood
 
-class MaliciousSecondaryUser(SecondaryUser):
     def step(self, current_band_contents: list[BaseUser] | None, pass_index: int):
+        """
+        Malicious secondary users aren't concerned with evaluating their
+        neighbors for now, so they only need behavior for the first pass.
+        """
         if pass_index == 0:
             self.measure_and_send_to_neighbors(current_band_contents)
 
     def sense_pu_value(self, current_band_contents: list["BaseUser"]) -> float:
-        return (
-            NOISE_FLOOR
-            if len(primary_users_in_band(current_band_contents)) > 0
-            else PU_TRANSMIT_POWER
-        )
+        """
+        Malicious secondary users will decide whether to give accurate results
+        or not depending on the probability assigned to them.
+        """
+        if np.random.default_rng().uniform() < self.attack_likelihood:
+            return (
+                NOISE_FLOOR
+                if len(primary_users_in_band(current_band_contents)) > 0
+                else PU_TRANSMIT_POWER
+            )
+        else:
+            super().sense_pu_value(current_band_contents)
 
 PU_TRANSMIT = True
 USE_REDISEN = True
