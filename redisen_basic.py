@@ -114,7 +114,7 @@ class SecondaryUser(User2D):
         # For basic ReDiSen, everyone will need to be in the same band
         self.switch_to_band(0)
 
-    def sense_pu_value(self, current_band_contents: list["BaseUser"]) -> float:
+    def calculate_sensed_pu_value(self, current_band_contents: list["BaseUser"]) -> float:
         """
         Honestly senses for the presence of a primary user.
         :param current_band_contents: The list of users in this user's current band.
@@ -135,6 +135,10 @@ class SecondaryUser(User2D):
             )
         else:
             return NOISE_FLOOR
+        
+    def sense_pu_value(self, current_band_contents: list["BaseUser"]) -> float:
+        self.last_sensed_pu_value = self.calculate_sensed_pu_value(current_band_contents)
+        return self.last_sensed_pu_value
 
 
 class BasicReDiSenSecondaryUser(SecondaryUser):
@@ -199,7 +203,7 @@ class MaliciousSecondaryUser(BasicReDiSenSecondaryUser):
                 else PU_TRANSMIT_POWER
             )
         else:
-            super().sense_pu_value(current_band_contents)
+            return super().sense_pu_value(current_band_contents)
 
 PU_TRANSMIT = False
 USE_REDISEN = True
