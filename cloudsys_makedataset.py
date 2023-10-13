@@ -111,7 +111,15 @@ def main():
     history = []
     for _ in range(1000):
         sim.step()
-        history.append(((su.reported_value, 1 if pu.current_band is not None else 0), attack_likelihood))
+        history.append(
+            (
+                (
+                    su.reported_value,
+                    1 if pu.current_band is not None else 0
+                ),
+                attack_likelihood
+            )
+        )
 
     print(history)
 
