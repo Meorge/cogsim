@@ -1,0 +1,21 @@
+[project]
+name = "cogsim"
+version = "0.0.1"
+authors = [
+    { name = "Malcolm Anderson", email="malcolminyo@gmail.com" },
+]
+description = "A small Python package for designing cognitive radio simulations"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/Meorge/cogsim"
+"Bug Tracker" = "https://github.com/Meorge/cogsim/issues"
+
+[build-system]
+requires = ["hatchling", "numpy"]
+build-backend = "hatchling.build"
+
