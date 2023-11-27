@@ -1,9 +1,9 @@
-from ..core.user import BaseUser
+from ..sync_user import SyncUser
 import numpy as np
 
 __all__ = ["User2D"]
 
-class User2D(BaseUser):
+class User2D(SyncUser):
     x: float = 0.0
     y: float = 0.0
 
