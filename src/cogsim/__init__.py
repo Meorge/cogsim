@@ -1,4 +1,4 @@
 from .core.user import BaseUser
-from .core.simulator import Simulator
+from .core.simulator import BaseSimulator
 
-__all__ = ["BaseUser", "Simulator"]
+__all__ = ["BaseUser", "BaseSimulator"]
