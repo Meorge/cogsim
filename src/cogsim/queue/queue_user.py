@@ -6,11 +6,16 @@ class QueueUser(BaseUser):
     wait_time: float = 1.0
     wait_time_remaining: float = 0.0
 
-    def __init__(self, wait_time: float | None = None):
+    def __init__(self, wait_time: float | None = None, offset: float | None = None):
         super().__init__()
         if wait_time is None:
             wait_time = 1.0
         self.wait_time = wait_time
+        self.reset_wait_time()
+        self.wait_time_remaining -= offset
+        
+    def step(self):
+        ...
 
     def reset_wait_time(self):
         self.wait_time_remaining = self.wait_time

@@ -1,16 +1,13 @@
+from ...core.point2d import Point2D
 from ..sync_user import SyncUser
-import numpy as np
 
 __all__ = ["User2D"]
 
-class User2D(SyncUser):
+class User2D(SyncUser, Point2D):
     x: float = 0.0
     y: float = 0.0
 
-    def __init__(self, x: float, y: float):
+    def __init__(self, x: float | None = None, y: float | None = None):
         super().__init__()
         self.x = x
         self.y = y
-
-    def distance_to(self, other_user: 'User2D'):
-        return np.sqrt(np.power(self.x - other_user.x, 2) + np.power(self.y - other_user.y, 2))
