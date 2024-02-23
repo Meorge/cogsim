@@ -13,6 +13,7 @@ class QueueUser(BaseUser):
         self.wait_time = wait_time
         self.reset_wait_time()
         self.wait_time_remaining -= offset
+        self.simulator: 'QueueSimulator' = None
         
     def step(self):
         ...

@@ -14,7 +14,10 @@ class QueueSimulator(BaseSimulator):
             num_bands = 1
         self.num_bands = num_bands
 
-        self.total_time = 0
+        self.current_time = 0
+        
+        for user in self.users:
+            user.simulator = self
 
     def step(self):
         # Find the user with the lowest time remaining
@@ -31,6 +34,6 @@ class QueueSimulator(BaseSimulator):
             else:
                 user.deduct_wait_time(time_to_deduct)
 
+        self.current_time += time_to_deduct
+        
         next_user.step()
-
-        self.total_time += time_to_deduct
